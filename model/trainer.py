@@ -4,10 +4,12 @@ import os
 import time
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from sklearn.cluster import KMeans
 from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 from tqdm import tqdm
 
@@ -15,6 +17,7 @@ from model.embedding import FullyConnect
 from model.school import SchoolImage
 from utils.logger import Logger
 from utils.loss import SpectralNetLoss
+from utils.metrics import run_evaluate_with_labels
 from utils.utils import pairwise_distance
 
 INF = 1e-8
@@ -50,7 +53,7 @@ class Trainer:
         self.num_epochs = config["trainer"]["num_epochs"]
         self.weight_path = config["trainer"]["weight_path"]
         self.batch_size = config["trainer"]["batch_size"]
-        self.cluster = config["trainer"]["cluster"]
+        self.cluster = config["cluster"]
 
         os.makedirs(self.weight_path, exist_ok=True)
 
@@ -87,7 +90,7 @@ class Trainer:
         ).to(self.device)
 
         self.fully_connect = FullyConnect(
-            in_ft=config["embedding"]["input_dim"],
+            in_ft=config["input_dim"],
             out_ft=self.out_feat,
         ).to(self.device)
 
@@ -174,7 +177,6 @@ class Trainer:
         )
         start_time = time.time()
         pbar = tqdm(range(self.num_epochs), desc="Training")
-        results = []
 
         for epoch in pbar:
             train_loss = 0
@@ -293,3 +295,20 @@ class Trainer:
 
         total_time = time.time() - start_time
         self.logger.info(f"Training completed in {total_time:.2f} seconds")
+
+    def evaluate(self, X: torch.Tensor, labels: torch.Tensor) -> np.ndarray:
+        X = X.view(X.size(0), -1)
+        X = X.to(self.device)
+
+        with torch.no_grad():
+            self.embeddings_, _, _ = self.model.spectral_net(
+                X, should_update_orth_weights=True
+            )
+            self.embeddings_ = self.embeddings_.detach().cpu().numpy()
+            kmeans = KMeans(n_clusters=self.cluster, n_init=10).fit(self.embeddings_)
+            cluster_assignments = kmeans.labels_
+            run_evaluate_with_labels(
+                cluster_assignments, labels.cpu().numpy(), self.cluster
+            )
+
+        return cluster_assignments

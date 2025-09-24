@@ -12,7 +12,7 @@ class SchoolImage(nn.Module):
         self.device = device
         self.spectral_net = SpectralNetModel(
             architecture=config["spectral_net"]["architecture"],
-            input_dim=config["spectral_net"]["input_dim"],
+            input_dim=config["input_dim"],
             orthonorm_weights=config["spectral_net"]["orthonorm_weights"],
         ).to(device)
 
