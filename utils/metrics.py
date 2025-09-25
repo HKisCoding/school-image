@@ -121,8 +121,6 @@ def nmi_score_metric(cluster_assignments: np.ndarray, y: np.ndarray) -> float:
 def run_evaluate_with_labels(cluster_assignments, y, n_clusters):
     acc_score = acc_score_metric(cluster_assignments, y, n_clusters=n_clusters)
     nmi_score = nmi_score_metric(cluster_assignments, y)
-    print(f"ACC: {np.round(acc_score, 3)}")
-    print(f"NMI: {np.round(nmi_score, 3)}")
     results = {
         "ACC": np.round(acc_score, 3),
         "NMI": np.round(nmi_score, 3),

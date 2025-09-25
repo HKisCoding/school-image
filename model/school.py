@@ -31,8 +31,6 @@ class SchoolImage(nn.Module):
                 semantic_out_dim=self.config["school"]["out_feat"],
                 should_update_orth_weights=True,
             )
-
-        device = self.config["device"] or torch.device("cpu")
         # affinity_matrix = create_affinity_matrix(
         #     X=x,
         #     n_neighbors=self.config.school.n_neighbors,
@@ -48,16 +46,16 @@ class SchoolImage(nn.Module):
         )
 
         num = x.shape[0]
-        A = torch.zeros(num, num, device=device)
+        A = torch.zeros(num, num, device=self.device)
         idxa0 = idx[:, 1 : self.config["school"]["k"] + 1]
         dfi = torch.sqrt(torch.sum((Y.unsqueeze(1) - Y[idxa0]) ** 2, dim=2) + 1e-8).to(
-            device
+            self.device
         )
         dxi = torch.sqrt(
             torch.sum((ortho_H.unsqueeze(1) - ortho_H[idxa0]) ** 2, dim=2) + 1e-8
-        ).to(device)
+        ).to(self.device)
         ad = -(dxi + beta * dfi) / (2 * alpha)
-        A.scatter_(1, idxa0.to(device), EProjSimplex_new_matrix(ad))
+        A.scatter_(1, idxa0.to(self.device), EProjSimplex_new_matrix(ad))
 
         embs_hom = torch.mm(A, semantic_H)
 

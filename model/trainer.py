@@ -73,7 +73,6 @@ class Trainer:
         self.optimizer = optim.Adam(
             self.model.parameters(),
             lr=self.lr,
-            weight_decay=1e4,
         )
 
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -94,10 +93,10 @@ class Trainer:
             out_ft=self.out_feat,
         ).to(self.device)
 
-    def _get_data_loader(self, X: torch.Tensor, y: torch.Tensor):
-        train_size = int(0.9 * len(X))
+    def _get_data_loader(self, X: torch.Tensor, train_ratio: float = 0.9):
+        train_size = int(train_ratio * len(X))
         valid_size = len(X) - train_size
-        dataset = TensorDataset(X, y)
+        dataset = TensorDataset(X)
         train_dataset, valid_dataset = random_split(dataset, [train_size, valid_size])
         trainset, valset = (
             copy.deepcopy(train_dataset),
@@ -166,14 +165,12 @@ class Trainer:
     def train(
         self,
         features: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
     ):
-        if features is not None and labels is not None:
+        if features is not None:
             self.features = features.view(features.size(0), -1).to(self.device)
-            self.labels = labels.to(self.device)
 
-        train_loader, ortho_loader, valid_loader = self._get_data_loader(
-            self.features, self.labels
+        train_loader, ortho_loader, _ = self._get_data_loader(
+            self.features, train_ratio=1
         )
         start_time = time.time()
         pbar = tqdm(range(self.num_epochs), desc="Training")
@@ -186,7 +183,9 @@ class Trainer:
 
             self.model.train()
             epoch_start_time = time.time()
-            for (X_grad, _), (X_orth, _) in zip(train_loader, ortho_loader):
+            for X_grad, X_orth in zip(train_loader, ortho_loader):
+                X_grad = X_grad[0]
+                X_orth = X_orth[0]
                 X_grad = X_grad.view(X_grad.size(0), -1)
                 X_orth = X_orth.view(X_orth.size(0), -1)
 
@@ -232,12 +231,9 @@ class Trainer:
 
                 # The second term in Eq. (13): cluster-level loss
                 Y_hat = torch.argmax(Y, dim=1)
-                cluster_center = torch.stack(
-                    [
-                        torch.mean(embs_hom[Y_hat == i], dim=0)
-                        for i in range(self.cluster)
-                    ]
-                )  # Shape: (num_clusters, embedding_dim)
+                cluster_center = torch.stack([
+                    torch.mean(embs_hom[Y_hat == i], dim=0) for i in range(self.cluster)
+                ])  # Shape: (num_clusters, embedding_dim)
                 # Gather positive cluster centers
                 positive = cluster_center[Y_hat]
                 # The first term in Eq. (11)
@@ -296,7 +292,7 @@ class Trainer:
         total_time = time.time() - start_time
         self.logger.info(f"Training completed in {total_time:.2f} seconds")
 
-    def evaluate(self, X: torch.Tensor, labels: torch.Tensor) -> np.ndarray:
+    def evaluate(self, X: torch.Tensor, labels: torch.Tensor) -> dict:
         X = X.view(X.size(0), -1)
         X = X.to(self.device)
 
@@ -305,10 +301,10 @@ class Trainer:
                 X, should_update_orth_weights=True
             )
             self.embeddings_ = self.embeddings_.detach().cpu().numpy()
-            kmeans = KMeans(n_clusters=self.cluster, n_init=10).fit(self.embeddings_)
+            kmeans = KMeans(n_clusters=self.cluster, n_init='auto').fit(self.embeddings_)
             cluster_assignments = kmeans.labels_
-            run_evaluate_with_labels(
+            results = run_evaluate_with_labels(
                 cluster_assignments, labels.cpu().numpy(), self.cluster
             )
 
-        return cluster_assignments
+        return results
